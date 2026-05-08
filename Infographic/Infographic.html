@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Job Application Automation — System Architecture</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: #F7F6F2;
+    color: #1A1A1A;
+    padding: 48px 40px;
+    min-height: 100vh;
+  }
+
+  /* ── Popup panel (single, fixed) ── */
+  #popup {
+    display: none;
+    position: fixed;
+    z-index: 9999;
+    background: #111;
+    color: #F5F5F2;
+    border-radius: 12px;
+    padding: 16px 18px;
+    width: 280px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.36);
+    border: 1px solid #2A2A2A;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+  #popup.visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  #popup::after {
+    content: '';
+    position: absolute;
+    border: 6px solid transparent;
+  }
+  #popup.arrow-bottom::after {
+    top: 100%; left: 50%;
+    transform: translateX(-50%);
+    border-top-color: #111;
+  }
+  #popup.arrow-top::after {
+    bottom: 100%; left: 50%;
+    transform: translateX(-50%);
+    border-bottom-color: #111;
+  }
+  #popup.arrow-right::after {
+    top: 16px; left: 100%;
+    border-left-color: #111;
+  }
+
+  /* Hoverable elements */
+  .tooltip-wrap {
+    cursor: pointer;
+    transition: box-shadow 0.18s, transform 0.18s;
+  }
+  .comp.tooltip-wrap:hover { box-shadow: 0 4px 18px rgba(0,0,0,0.13); transform: translateY(-2px); }
+  .layer.tooltip-wrap:hover { box-shadow: 0 6px 28px rgba(0,0,0,0.10); }
+  .tooltip-wrap.active-tip { outline: 2px solid rgba(255,255,255,0.25); outline-offset: 2px; }
+
+  /* Hide inline tooltip divs — data only, rendered via JS */
+  .tooltip { display: none !important; }
+
+  .tip-title {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+    color: #FFF;
+  }
+  .tip-body {
+    font-size: 11.5px;
+    line-height: 1.65;
+    color: #BBB;
+  }
+  .tip-tech {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 9px;
+  }
+  .tip-badge {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: #222;
+    color: #888;
+    border: 1px solid #333;
+  }
+  .tip-badge.hi { background: #1E2E1E; color: #5DBE7A; border-color: #2E4A2E; }
+  .tip-badge.hb { background: #2E1E1E; color: #E07070; border-color: #4A2E2E; }
+  .tip-badge.hd { background: #1E2E26; color: #5DBEA0; border-color: #2E4A3A; }
+
+  /* ── Header ── */
+  .header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 40px;
+    padding-bottom: 28px;
+    border-bottom: 2px solid #1A1A1A;
+  }
+  .header-left { max-width: 600px; }
+  .report-tag {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 10px;
+  }
+  h1 { font-size: 30px; font-weight: 700; line-height: 1.15; letter-spacing: -0.5px; color: #0A0A0A; }
+  h1 span { color: #2255E8; }
+  .subtitle { font-size: 14px; color: #666; margin-top: 8px; line-height: 1.6; max-width: 480px; }
+  .header-right {
+    text-align: right;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: #999;
+    line-height: 1.8;
+  }
+  .hover-hint {
+    margin-top: 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #FFFBE8;
+    border: 1px solid #F0D060;
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 11px;
+    color: #7A6000;
+    font-family: 'DM Mono', monospace;
+  }
+
+  /* ── Legend ── */
+  .legend { display: flex; gap: 24px; margin-bottom: 36px; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #555; font-weight: 500; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+
+  /* ── Grid ── */
+  .arch-grid {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    grid-template-rows: auto auto;
+    gap: 20px;
+  }
+
+  /* ── Layer cards ── */
+  .layer {
+    border-radius: 14px;
+    padding: 20px;
+    position: relative;
+    cursor: default;
+    transition: box-shadow 0.2s ease, transform 0.15s ease;
+  }
+  .layer:hover { box-shadow: 0 6px 28px rgba(0,0,0,0.10); transform: translateY(-1px); }
+
+  .layer-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 500;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .layer-label::before { content: ''; display: block; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+  .layer-frontend { background: #EBF0FF; border: 1.5px solid #BECBFF; grid-column: 1; grid-row: 1; }
+  .layer-frontend .layer-label { color: #2255E8; }
+
+  .layer-backend { background: #FFF0F0; border: 1.5px solid #FFBEBE; grid-column: 2; grid-row: 1 / 3; }
+  .layer-backend .layer-label { color: #D62929; }
+
+  .layer-data { background: #F0F9F4; border: 1.5px solid #B0DFC2; grid-column: 1; grid-row: 2; }
+  .layer-data .layer-label { color: #1A7A40; }
+
+  /* ── Component cards ── */
+  .comp {
+    background: white;
+    border-radius: 9px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    border: 1px solid rgba(0,0,0,0.08);
+    position: relative;
+    cursor: pointer;
+    transition: box-shadow 0.18s ease, transform 0.18s ease, border-color 0.18s ease;
+  }
+  .comp:last-child { margin-bottom: 0; }
+  .comp:hover { box-shadow: 0 4px 18px rgba(0,0,0,0.13); transform: translateY(-2px); border-color: rgba(0,0,0,0.18); }
+
+  .comp-title { font-size: 13px; font-weight: 600; color: #111; margin-bottom: 3px; }
+  .comp-desc { font-size: 11px; color: #888; line-height: 1.5; }
+  .comp-tag {
+    display: inline-block;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    margin-top: 5px;
+    font-weight: 500;
+  }
+  .tag-blue { background: #E8EDFF; color: #2255E8; }
+  .tag-red  { background: #FFE8E8; color: #D62929; }
+  .tag-green { background: #E5F7ED; color: #1A7A40; }
+  .tag-gray  { background: #F0F0EE; color: #555; }
+
+  /* ── Backend inner layout ── */
+  .backend-inner { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .backend-flow { display: flex; flex-direction: column; gap: 0; }
+  .flow-arrow {
+    width: 24px; height: 22px;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 0 0 20px;
+  }
+  .comp-agent { border-left: 3px solid #D62929; }
+  .comp-orchestrator { border-left: 3px solid #E87722; background: #FFFAF5; }
+
+  /* ── Data layer ── */
+  .data-inner { display: flex; flex-direction: column; gap: 10px; }
+  .comp-db { border-left: 3px solid #1A7A40; }
+
+  /* ── User node ── */
+  .user-node { text-align: center; margin-bottom: 24px; }
+  .user-circle { display: inline-flex; flex-direction: column; align-items: center; gap: 4px; }
+  .user-icon {
+    width: 52px; height: 52px;
+    border-radius: 50%;
+    background: #1A1A1A;
+    display: flex; align-items: center; justify-content: center;
+    color: white;
+    font-size: 22px;
+    transition: transform 0.2s;
+  }
+  .user-circle:hover .user-icon { transform: scale(1.1); }
+  .user-label {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.05em;
+    color: #555; text-transform: uppercase;
+    font-family: 'DM Mono', monospace;
+  }
+  .user-arrow {
+    margin: 8px auto; width: 1px; height: 28px;
+    background: #CCC; display: block; position: relative;
+  }
+  .user-arrow::after {
+    content: '';
+    position: absolute;
+    bottom: -4px; left: -4px;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid #CCC;
+  }
+
+  /* ── Step badges ── */
+  .step-badge {
+    position: absolute; top: -8px; right: -8px;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: #1A1A1A;
+    color: white;
+    font-size: 10px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'DM Mono', monospace;
+  }
+  .step-blue { background: #2255E8; }
+  .step-red  { background: #D62929; }
+  .step-green { background: #1A7A40; }
+  .step-orange { background: #E87722; }
+
+  /* ── Flow summary ── */
+  .flow-summary {
+    background: #1A1A1A; color: white;
+    border-radius: 10px; padding: 18px 22px;
+    margin-top: 20px; grid-column: 1 / 3;
+  }
+  .flow-summary-title {
+    font-size: 11px; font-family: 'DM Mono', monospace;
+    color: #AAA; letter-spacing: 0.1em;
+    text-transform: uppercase; margin-bottom: 12px;
+  }
+  .flow-steps { display: flex; gap: 0; align-items: flex-start; flex-wrap: wrap; }
+  .flow-step { display: flex; align-items: flex-start; gap: 8px; flex: 1; min-width: 140px; }
+  .flow-step-num {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: #333; color: #FFF;
+    font-size: 10px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; font-family: 'DM Mono', monospace; margin-top: 1px;
+  }
+  .flow-step-text { font-size: 12px; color: #CCC; line-height: 1.5; }
+  .flow-step-text strong { display: block; color: white; font-size: 12px; margin-bottom: 1px; }
+  .flow-divider { width: 20px; height: 1px; background: #444; margin: 12px 4px 0; flex-shrink: 0; }
+
+  /* ── Footer ── */
+  .footer {
+    margin-top: 36px; padding-top: 20px;
+    border-top: 1px solid #DDD;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 11px; color: #999;
+    font-family: 'DM Mono', monospace;
+  }
+
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-left">
+    <div class="report-tag">System Architecture · Technical Report</div>
+    <h1>Job Application<br><span>Automation Platform</span></h1>
+    <p class="subtitle">End-to-end AI-powered system for automated job discovery, resume optimization, and application tracking across major job platforms.</p>
+    <div class="hover-hint">💡 Hover over any block or layer to see details</div>
+  </div>
+  <div class="header-right">
+    <div>Architecture v1.0</div>
+    <div>Full-Stack + AI Agents</div>
+    <div style="margin-top:8px;color:#2255E8;font-weight:600">3 Layers · 8 Components</div>
+  </div>
+</div>
+
+<!-- Legend -->
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#2255E8"></div> Frontend Layer</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#D62929"></div> Backend / AI Agents</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#1A7A40"></div> Data & External Services</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#E87722"></div> Orchestration</div>
+</div>
+
+<!-- User node -->
+<div class="user-node">
+  <div class="user-circle tooltip-wrap">
+    <div class="user-icon">👤</div>
+    <div class="user-label">User</div>
+    <div class="tooltip">
+      <div class="tip-title">👤 End User</div>
+      <div class="tip-body">The person using the platform. Uploads their resume and preferences, then lets the automation handle job discovery, applications, and tracking — all from a single dashboard.</div>
+      <div class="tip-tech">
+        <span class="tip-badge hi">Authenticated via Supabase</span>
+        <span class="tip-badge hi">Dashboard access</span>
+      </div>
+    </div>
+  </div>
+  <span class="user-arrow"></span>
+</div>
+
+<!-- Architecture Grid -->
+<div class="arch-grid">
+
+  <!-- FRONTEND LAYER -->
+  <div class="layer layer-frontend tooltip-wrap">
+    <div class="tooltip">
+      <div class="tip-title">🖥️ Frontend Layer</div>
+      <div class="tip-body">The user-facing web application built with Next.js. Handles all UI rendering, authentication flows, and presents real-time job/application data through a clean dashboard interface. Communicates with the FastAPI backend via REST calls.</div>
+      <div class="tip-tech">
+        <span class="tip-badge hi">Next.js</span>
+        <span class="tip-badge hi">React</span>
+        <span class="tip-badge hi">Tailwind CSS</span>
+        <span class="tip-badge hi">Supabase Auth</span>
+      </div>
+    </div>
+    <div class="layer-label">Frontend (apps/web)</div>
+
+    <div class="comp tooltip-wrap" style="background:#2255E8;color:white;border-color:#2255E8;">
+      <div class="step-badge step-blue" style="background:white;color:#2255E8">1</div>
+      <div class="comp-title" style="color:white">Next.js Application</div>
+      <div class="comp-desc" style="color:rgba(255,255,255,0.75)">Main web interface — entry point for all user interactions</div>
+      <div class="tooltip">
+        <div class="tip-title">⚡ Next.js Application</div>
+        <div class="tip-body">The central hub of the frontend. Uses server-side rendering (SSR) for fast initial loads and client-side navigation for a smooth SPA experience. Routes all API calls to the FastAPI backend and renders live application status updates.</div>
+        <div class="tip-tech">
+          <span class="tip-badge hi">SSR + CSR hybrid</span>
+          <span class="tip-badge hi">REST API client</span>
+          <span class="tip-badge hi">Real-time updates</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="comp tooltip-wrap">
+      <div class="comp-title">React Components / Tailwind</div>
+      <div class="comp-desc">Reusable UI components with utility-first styling</div>
+      <span class="comp-tag tag-blue">UI Layer</span>
+      <div class="tooltip">
+        <div class="tip-title">🎨 React Components / Tailwind</div>
+        <div class="tip-body">A component library of reusable UI elements — job cards, application status badges, resume preview panels, and form inputs. Tailwind CSS ensures rapid, consistent styling without custom CSS files. Components are fully responsive across devices.</div>
+        <div class="tip-tech">
+          <span class="tip-badge hi">Atomic design</span>
+          <span class="tip-badge hi">Responsive layout</span>
+          <span class="tip-badge hi">Dark mode ready</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="comp tooltip-wrap">
+      <div class="comp-title">Supabase Auth</div>
+      <div class="comp-desc">User authentication and session management</div>
+      <span class="comp-tag tag-blue">Auth</span>
+      <div class="tooltip">
+        <div class="tip-title">🔐 Supabase Auth</div>
+        <div class="tip-body">Handles user registration, login, and secure session management using JWTs. Supports email/password and OAuth providers. Row-level security (RLS) in the database ensures each user can only access their own job data, resumes, and applications.</div>
+        <div class="tip-tech">
+          <span class="tip-badge hi">JWT tokens</span>
+          <span class="tip-badge hi">OAuth support</span>
+          <span class="tip-badge hi">Row-level security</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="comp tooltip-wrap">
+      <div class="comp-title">User Dashboard</div>
+      <div class="comp-desc">Applications · Resume · Status tracking views</div>
+      <span class="comp-tag tag-blue">Dashboard</span>
+      <div class="tooltip">
+        <div class="tip-title">📊 User Dashboard</div>
+        <div class="tip-body">The command center for the user. Displays matched jobs, application statuses (applied, viewed, rejected, interview), resume versions, and pipeline health. Users can pause automation, manually review jobs, and download tailored resumes from here.</div>
+        <div class="tip-tech">
+          <span class="tip-badge hi">Live status feed</span>
+          <span class="tip-badge hi">Resume manager</span>
+          <span class="tip-badge hi">Analytics view</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BACKEND LAYER -->
+  <div class="layer layer-backend tooltip-wrap">
+    <div class="tooltip">
+      <div class="tip-title">⚙️ Backend / AI Agent Layer</div>
+      <div class="tip-body">The brain of the platform. A FastAPI service orchestrates a chain of specialized AI agents — scraping jobs, filtering by profile match, optimizing resumes, auto-applying, and tracking outcomes. Each agent is independently scalable and communicates via internal queues.</div>
+      <div class="tip-tech">
+        <span class="tip-badge hb">FastAPI</span>
+        <span class="tip-badge hb">Python agents</span>
+        <span class="tip-badge hb">Google Gemini AI</span>
+        <span class="tip-badge hb">Redis task queue</span>
+      </div>
+    </div>
+    <div class="layer-label">Backend (apps/agent)</div>
+    <div class="backend-inner">
+      <div class="backend-flow">
+
+        <div class="comp tooltip-wrap" style="background:#D62929;color:white;border-color:#D62929;">
+          <div class="step-badge step-red" style="background:white;color:#D62929">2</div>
+          <div class="comp-title" style="color:white">FastAPI App</div>
+          <div class="comp-desc" style="color:rgba(255,255,255,0.75)">REST API gateway — routes all frontend requests</div>
+          <div class="tooltip">
+            <div class="tip-title">🚀 FastAPI App</div>
+            <div class="tip-body">The API gateway between the frontend and the agent pipeline. Exposes endpoints for triggering job scans, fetching matched results, retrieving optimized resumes, and querying application status. Uses async/await for high-throughput non-blocking I/O. Auto-generates OpenAPI docs.</div>
+            <div class="tip-tech">
+              <span class="tip-badge hb">Async Python</span>
+              <span class="tip-badge hb">OpenAPI / Swagger</span>
+              <span class="tip-badge hb">Pydantic validation</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="flow-arrow">
+          <svg width="10" height="18" viewBox="0 0 10 18"><line x1="5" y1="0" x2="5" y2="12" stroke="#D62929" stroke-width="1.5"/><polyline points="1,9 5,14 9,9" fill="none" stroke="#D62929" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+
+        <div class="comp comp-orchestrator tooltip-wrap">
+          <div class="step-badge step-orange">3</div>
+          <div class="comp-title">Collector Orchestrator</div>
+          <div class="comp-desc">Coordinates all agent pipelines and job discovery workflows</div>
+          <span class="comp-tag" style="background:#FFF0E0;color:#E87722">Orchestration</span>
+          <div class="tooltip">
+            <div class="tip-title">🎛️ Collector Orchestrator</div>
+            <div class="tip-body">The master controller that sequences the entire agent pipeline. It triggers scrapers in parallel, waits for results, fans them into the AI filter, then routes matched jobs to the resume and apply agents. Manages retries, timeouts, and failure recovery across all sub-agents.</div>
+            <div class="tip-tech">
+              <span class="tip-badge hb">Pipeline coordination</span>
+              <span class="tip-badge hb">Parallel execution</span>
+              <span class="tip-badge hb">Retry logic</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="flow-arrow">
+          <svg width="10" height="18" viewBox="0 0 10 18"><line x1="5" y1="0" x2="5" y2="12" stroke="#888" stroke-width="1.5"/><polyline points="1,9 5,14 9,9" fill="none" stroke="#888" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+
+        <div class="comp comp-agent tooltip-wrap">
+          <div class="step-badge step-red">4</div>
+          <div class="comp-title">Job Scrapers</div>
+          <div class="comp-desc">Naukri · LinkedIn · JobSpy — multi-platform data collection</div>
+          <span class="comp-tag tag-red">Data Collection</span>
+          <div class="tooltip">
+            <div class="tip-title">🕷️ Job Scrapers</div>
+            <div class="tip-body">Three platform-specific scraper modules that collect job postings in parallel. Each scraper handles login simulation, pagination, and anti-bot evasion strategies. Collected data (title, JD, salary, location, skills) is normalized into a unified schema before passing downstream.</div>
+            <div class="tip-tech">
+              <span class="tip-badge hb">Naukri scraper</span>
+              <span class="tip-badge hb">LinkedIn scraper</span>
+              <span class="tip-badge hb">JobSpy API</span>
+              <span class="tip-badge hb">Data normalization</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="flow-arrow">
+          <svg width="10" height="18" viewBox="0 0 10 18"><line x1="5" y1="0" x2="5" y2="12" stroke="#888" stroke-width="1.5"/><polyline points="1,9 5,14 9,9" fill="none" stroke="#888" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+
+        <div class="comp comp-agent tooltip-wrap">
+          <div class="step-badge step-red">5</div>
+          <div class="comp-title">AI Job Filter Agent</div>
+          <div class="comp-desc">Matches scraped jobs against user profile using Gemini AI</div>
+          <span class="comp-tag tag-red">AI · Filtering</span>
+          <div class="tooltip">
+            <div class="tip-title">🤖 AI Job Filter Agent</div>
+            <div class="tip-body">Uses Google Gemini to semantically match scraped job listings against the user's profile, skills, experience level, and preferences. Scores each job 0–100 and filters out low-relevance listings. Handles nuanced matching like "5 years React" vs "senior frontend engineer".</div>
+            <div class="tip-tech">
+              <span class="tip-badge hb">Google Gemini LLM</span>
+              <span class="tip-badge hb">Semantic scoring</span>
+              <span class="tip-badge hb">Profile matching</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right column -->
+      <div class="backend-flow">
+
+        <div class="comp comp-agent tooltip-wrap" style="margin-top:0">
+          <div class="step-badge step-red">6</div>
+          <div class="comp-title">Resume Optimization Agent</div>
+          <div class="comp-desc">Customizes resume content for each job description via AI</div>
+          <span class="comp-tag tag-red">AI · NLP</span>
+          <div class="tooltip">
+            <div class="tip-title">📝 Resume Optimization Agent</div>
+            <div class="tip-body">For each matched job, this agent rewrites the user's base resume — adjusting the summary, reordering skills, and highlighting relevant experience — to maximize ATS score and recruiter relevance. Each version is stored and linked to its specific job application in the database.</div>
+            <div class="tip-tech">
+              <span class="tip-badge hb">Gemini text gen</span>
+              <span class="tip-badge hb">ATS optimization</span>
+              <span class="tip-badge hb">Per-JD versioning</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="flow-arrow">
+          <svg width="10" height="18" viewBox="0 0 10 18"><line x1="5" y1="0" x2="5" y2="12" stroke="#888" stroke-width="1.5"/><polyline points="1,9 5,14 9,9" fill="none" stroke="#888" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+
+        <div class="comp comp-agent tooltip-wrap">
+          <div class="step-badge step-red">7</div>
+          <div class="comp-title">Job Apply Agent</div>
+          <div class="comp-desc">Automated form filling and submission on job platforms</div>
+          <span class="comp-tag tag-red">Automation</span>
+          <div class="tooltip">
+            <div class="tip-title">📤 Job Apply Agent</div>
+            <div class="tip-body">Automates the actual application process using browser automation. Navigates to the job page, fills in fields (name, email, experience, cover letter), attaches the optimized resume, and submits the form. Handles CAPTCHAs, multi-step forms, and platform-specific quirks gracefully.</div>
+            <div class="tip-tech">
+              <span class="tip-badge hb">Browser automation</span>
+              <span class="tip-badge hb">Form intelligence</span>
+              <span class="tip-badge hb">CAPTCHA handling</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="flow-arrow">
+          <svg width="10" height="18" viewBox="0 0 10 18"><line x1="5" y1="0" x2="5" y2="12" stroke="#888" stroke-width="1.5"/><polyline points="1,9 5,14 9,9" fill="none" stroke="#888" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+
+        <div class="comp comp-agent tooltip-wrap">
+          <div class="step-badge step-red">8</div>
+          <div class="comp-title">Application Tracking Agent</div>
+          <div class="comp-desc">Monitors and updates application status across all platforms</div>
+          <span class="comp-tag tag-red">Monitoring</span>
+          <div class="tooltip">
+            <div class="tip-title">📡 Application Tracking Agent</div>
+            <div class="tip-body">Periodically checks the status of submitted applications by revisiting platform dashboards or parsing email notifications. Updates the database with status changes (viewed, shortlisted, rejected, interview scheduled) and pushes real-time notifications to the user dashboard.</div>
+            <div class="tip-tech">
+              <span class="tip-badge hb">Scheduled polling</span>
+              <span class="tip-badge hb">Email parsing</span>
+              <span class="tip-badge hb">Status webhooks</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DATA LAYER -->
+  <div class="layer layer-data tooltip-wrap">
+    <div class="tooltip">
+      <div class="tip-title">🗄️ Data & External Services</div>
+      <div class="tip-body">The persistence and intelligence backbone. PostgreSQL stores all user data, jobs, and applications with row-level security. Redis manages async job queues and caching. Google Gemini provides the AI reasoning, while external job platforms are both data sources and application targets.</div>
+      <div class="tip-tech">
+        <span class="tip-badge hd">PostgreSQL</span>
+        <span class="tip-badge hd">Supabase</span>
+        <span class="tip-badge hd">Redis</span>
+        <span class="tip-badge hd">Gemini API</span>
+      </div>
+    </div>
+    <div class="layer-label">Data &amp; External Services</div>
+    <div class="data-inner">
+      <div class="comp comp-db tooltip-wrap">
+        <div class="comp-title">PostgreSQL / Supabase</div>
+        <div class="comp-desc">Primary database — users, jobs, applications, resumes</div>
+        <span class="comp-tag tag-green">Primary DB</span>
+        <div class="tooltip">
+          <div class="tip-title">🐘 PostgreSQL / Supabase</div>
+          <div class="tip-body">The primary relational database storing all platform data: user profiles, scraped job listings, application records, versioned resumes, and agent logs. Supabase wraps Postgres with a RESTful API, real-time subscriptions, and built-in row-level security policies per user.</div>
+          <div class="tip-tech">
+            <span class="tip-badge hd">Row-level security</span>
+            <span class="tip-badge hd">Real-time subscriptions</span>
+            <span class="tip-badge hd">Auto REST API</span>
+          </div>
+        </div>
+      </div>
+      <div class="comp comp-db tooltip-wrap">
+        <div class="comp-title">Redis Cache / Queue</div>
+        <div class="comp-desc">Job queues, session cache, async task management</div>
+        <span class="comp-tag tag-green">Cache · Queue</span>
+        <div class="tooltip">
+          <div class="tip-title">⚡ Redis Cache / Queue</div>
+          <div class="tip-body">Dual-purpose in-memory store. As a cache: stores scraped job results and Gemini API responses to avoid redundant calls. As a queue (via Redis Streams or RQ): manages the async agent task pipeline so scrapers, filters, and apply agents process jobs independently without blocking each other.</div>
+          <div class="tip-tech">
+            <span class="tip-badge hd">Task queuing</span>
+            <span class="tip-badge hd">Response caching</span>
+            <span class="tip-badge hd">Rate limit buffer</span>
+          </div>
+        </div>
+      </div>
+      <div class="comp tooltip-wrap" style="border-left:3px solid #888">
+        <div class="comp-title">Google Gemini AI</div>
+        <div class="comp-desc">LLM for job filtering and resume optimization</div>
+        <span class="comp-tag tag-gray">External AI</span>
+        <div class="tooltip">
+          <div class="tip-title">✨ Google Gemini AI</div>
+          <div class="tip-body">The large language model powering both the AI Filter Agent and the Resume Optimization Agent. Called via the Gemini API with structured prompts. Handles semantic job-profile matching, relevance scoring, and natural language resume rewriting. Results are cached in Redis to minimize API costs.</div>
+          <div class="tip-tech">
+            <span class="tip-badge">Gemini 1.5 Pro</span>
+            <span class="tip-badge">Structured prompts</span>
+            <span class="tip-badge">Cached responses</span>
+          </div>
+        </div>
+      </div>
+      <div class="comp tooltip-wrap" style="border-left:3px solid #888">
+        <div class="comp-title">Job Platforms</div>
+        <div class="comp-desc">LinkedIn · Naukri · Careers pages — source &amp; apply targets</div>
+        <span class="comp-tag tag-gray">External APIs</span>
+        <div class="tooltip">
+          <div class="tip-title">🌐 Job Platforms</div>
+          <div class="tip-body">External job boards that serve a dual role: they are the data sources for scraping listings AND the submission targets for the apply agent. Each platform has its own scraping strategy and form submission flow. The system maintains platform-specific credentials and session cookies per user for authenticated actions.</div>
+          <div class="tip-tech">
+            <span class="tip-badge">LinkedIn</span>
+            <span class="tip-badge">Naukri</span>
+            <span class="tip-badge">Company career pages</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Flow Summary -->
+  <div class="flow-summary">
+    <div class="flow-summary-title">Automated Pipeline Flow</div>
+    <div class="flow-steps">
+      <div class="flow-step">
+        <div class="flow-step-num">1</div>
+        <div class="flow-step-text"><strong>User Input</strong>Profile &amp; preferences uploaded</div>
+      </div>
+      <div class="flow-divider"></div>
+      <div class="flow-step">
+        <div class="flow-step-num">2</div>
+        <div class="flow-step-text"><strong>Job Discovery</strong>Scrapers collect listings</div>
+      </div>
+      <div class="flow-divider"></div>
+      <div class="flow-step">
+        <div class="flow-step-num">3</div>
+        <div class="flow-step-text"><strong>AI Filtering</strong>Gemini matches to profile</div>
+      </div>
+      <div class="flow-divider"></div>
+      <div class="flow-step">
+        <div class="flow-step-num">4</div>
+        <div class="flow-step-text"><strong>Resume Tuning</strong>Custom resume per JD</div>
+      </div>
+      <div class="flow-divider"></div>
+      <div class="flow-step">
+        <div class="flow-step-num">5</div>
+        <div class="flow-step-text"><strong>Auto Apply</strong>Forms filled &amp; submitted</div>
+      </div>
+      <div class="flow-divider"></div>
+      <div class="flow-step">
+        <div class="flow-step-num">6</div>
+        <div class="flow-step-text"><strong>Tracking</strong>Status monitored live</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Footer -->
+<div class="footer">
+  <span>Job Application Automation Platform · System Architecture</span>
+  <span>Next.js · FastAPI · Google Gemini · Supabase · Redis</span>
+</div>
+
+<!-- Single shared popup -->
+<div id="popup"></div>
+
+<script>
+  const popup = document.getElementById('popup');
+  let activeEl = null;
+
+  function showPopup(el) {
+    const tipEl = el.querySelector('.tooltip');
+    if (!tipEl) return;
+
+    // Deactivate previous
+    if (activeEl && activeEl !== el) {
+      activeEl.classList.remove('active-tip');
+    }
+
+    // If same element clicked again — close
+    if (activeEl === el) {
+      hidePopup();
+      return;
+    }
+
+    activeEl = el;
+    el.classList.add('active-tip');
+
+    // Inject tooltip content
+    popup.innerHTML = tipEl.innerHTML;
+    popup.style.display = 'block';
+    popup.classList.remove('visible', 'arrow-bottom', 'arrow-top', 'arrow-right');
+
+    // Position popup
+    const rect = el.getBoundingClientRect();
+    const pw = 280, ph = 200; // estimated popup size
+    const margin = 12;
+    const scrollY = window.scrollY;
+    const scrollX = window.scrollX;
+
+    let top, left, arrowClass;
+
+    // Try above first
+    if (rect.top - ph - margin > 0) {
+      top = rect.top + scrollY - ph - margin;
+      left = rect.left + scrollX + rect.width / 2 - pw / 2;
+      arrowClass = 'arrow-bottom';
+    } else {
+      // Try below
+      top = rect.bottom + scrollY + margin;
+      left = rect.left + scrollX + rect.width / 2 - pw / 2;
+      arrowClass = 'arrow-top';
+    }
+
+    // Clamp horizontally
+    const maxLeft = window.innerWidth + scrollX - pw - 12;
+    left = Math.max(12 + scrollX, Math.min(left, maxLeft));
+
+    popup.style.top = top + 'px';
+    popup.style.left = left + 'px';
+    popup.classList.add(arrowClass);
+
+    // Animate in
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => popup.classList.add('visible'));
+    });
+  }
+
+  function hidePopup() {
+    if (activeEl) activeEl.classList.remove('active-tip');
+    activeEl = null;
+    popup.classList.remove('visible');
+    setTimeout(() => { if (!activeEl) popup.style.display = 'none'; }, 200);
+  }
+
+  // Attach click to all tooltip-wrap elements
+  document.querySelectorAll('.tooltip-wrap').forEach(el => {
+    el.addEventListener('click', e => {
+      e.stopPropagation();
+      showPopup(el);
+    });
+  });
+
+  // Close on outside click
+  document.addEventListener('click', () => hidePopup());
+
+  // Close on Escape
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') hidePopup(); });
+</script>
+</body>
+</html>
